@@ -1,7 +1,7 @@
 import OracleDB from 'oracledb'
 import logger from '../utils/logger.js'
 
-import { functions } from './crudOrclFunctions.js'
+import { functions } from '../functions/crudOrclFunctions.js'
 import { sentences } from './crudOrclSentences.js'
 import { isEmpty } from '../utils/index.js'
 

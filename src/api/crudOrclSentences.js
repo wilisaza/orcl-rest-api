@@ -1,5 +1,5 @@
 import OracleDB from 'oracledb'
-import { functions } from './crudOrclFunctions.js'
+import { functions } from '../functions/crudOrclFunctions.js'
 
 export const sentences = {
   filterString(table, where, resWords) {
@@ -162,31 +162,6 @@ export const sentences = {
     return sqlString
   },
 
-  insertConfeString(table, data) {
-    let dataMod = data
-    let sqlString = `INSERT INTO ${table} (`
-    for (let colum in dataMod) {
-      if (dataMod[colum] != null) {
-        sqlString += `${colum}, `
-      }
-    }
-    sqlString += ')'
-    sqlString = sqlString.replace(', )', ') VALUES(')
-    //VALUES
-    for (let colum in dataMod) {
-      if (dataMod[colum] != null) {
-        if (typeof dataMod[colum] === 'string') {
-          sqlString += `'${dataMod[colum]}', `
-        } else {
-          sqlString += `${dataMod[colum]}, `
-        }
-      }
-    }
-    sqlString += ')'
-    sqlString = sqlString.replace(', )', ')')
-    return sqlString
-  },
-
   functionString(nomFunction, params) {
     let sqlString = `SELECT ${nomFunction}(`
     for (let colum in params) {
@@ -279,5 +254,23 @@ export const sentences = {
       }
     }
     return bindVars
+  },
+
+  paginationString(sql, where) {
+    //Se agrega en esta función el orderby
+    const orderby = where.orderby || 'N'
+    const pags = where.pags || 'N'
+
+    if (orderby !== 'N') {
+      sql += ` ORDER BY ${orderby}`
+    }
+
+    if (pags === 'S') {
+      const offset = Number(where.offset || 0)
+      const numrows = Number(where.numrows || 10)
+      //Para versiones mayores a 12.01
+      sql += ` OFFSET ${offset} ROWS FETCH NEXT ${numrows} ROWS ONLY`
+    }
+    return sql
   },
 }

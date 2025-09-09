@@ -1,5 +1,5 @@
 import logger from '../utils/logger.js'
-import { decodeString } from '../functions/encodeDecodeFunctions.js'
+import { decodeString } from './encodeDecodeFunctions.js'
 import { valKeys } from '../utils/arrayFunctions.js'
 
 const libName = '[[api/crudOrclFunctions.js]]'
@@ -127,27 +127,5 @@ export const functions = {
     return obj
   },
 
-  paginationString(sql, connection, where) {
-    //Se agrega en esta función el orderby
-    const orderby = where.orderby || 'N'
-    const pags = where.pags || 'N'
-
-    if (orderby !== 'N') {
-      sql += ` ORDER BY ${orderby}`
-    }
-
-    if (pags === 'S') {
-      const offset = Number(where.offset || 0)
-      const numrows = Number(where.numrows || 10)
-
-      if (connection.oracleServerVersion >= 1201000000) {
-        //Para versiones mayores a 12.01
-        sql += ` OFFSET ${offset} ROWS FETCH NEXT ${numrows} ROWS ONLY`
-      } else {
-        sql = `SELECT * FROM (SELECT A.*, ROWNUM AS MY_RNUM FROM ( ${sql} ) A 
-                        WHERE ROWNUM <= ${numrows} + ${offset}) WHERE MY_RNUM > ${offset}`
-      }
-    }
-    return sql
-  },
+  
 }

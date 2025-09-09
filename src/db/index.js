@@ -8,6 +8,7 @@ import {
   stringifyWithCircularDetection,
   turnToCamelCase,
 } from '../utils/index.js'
+import { functions } from '../functions/crudOrclFunctions.js'
 import Logger from '../utils/logger.js'
 
 let pool = null
@@ -180,134 +181,14 @@ const getConnection = async (
   }
 }
 
-/**
- * executeQuery - Función para ejecutar una consulta en la base de datos Oracle - raw query
- * @param {statement} - Consulta a ejecutar
- */
-export const executeQuery = async (
-  { statement, camelCaseResponse = false, siifWebPoolName, siifWebUser } = {},
-  { logger = Logger } = {}
-) => {
-  const fName = '[executeQuery]'
 
-  if (isEmpty(statement)) {
-    const error = `${fName} No se ha enviado la consulta a ejecutar`
-    logger.error(error)
-    return { success: false, error }
-  }
-
-  const connection = (await getConnection({ siifWebPoolName, siifWebUser }, { logger })) ?? {}
-
-  if (!connection?.success) {
-    const error = 'No se ha podido establecer la conexion con la base de datos'
-    logger.error(`${fName} ${error}`)
-    return { success: false, error }
-  }
-
-  const { connection: oracleConector } = connection
-
-  const tableName = extractTableName(statement)
-  logger.info(`${fName} Ejecutando la consulta: ${statement}`)
-  try {
-    let result = await oracleConector.execute(statement)
-    let data = result
-    if (result?.rows) {
-      data = await Promise.all(
-        result.rows.map(async (row) => {
-          const formattedRow = {}
-          for (let i = 0; i < result.metaData.length; i++) {
-            const meta = result.metaData[i]
-            let value = row[i]
-            if (value && value.constructor.name === 'Lob') {
-              value = (await value.getData(1, value.length)).toString()
-            }
-
-            if (value && value === 'true') {
-              value = true
-            }
-
-            if (value && value === 'false') {
-              value = false
-            }
-
-            let key = meta.name.toLowerCase()
-
-            if (camelCaseResponse) {
-              key = turnToCamelCase(key)
-            }
-
-            formattedRow[key] = value
-          }
-          return formattedRow
-        })
-      )
-    } else {
-      // Si no se afectan registros, se retorna un array vacio
-      if (isEmpty(result?.lastRowid)) {
-        return { success: true, data: [] }
-      }
-
-      let getRegister = await oracleConector.execute(
-        `SELECT * FROM ${tableName} where rowid = '${result?.lastRowid}'`
-      )
-      data = await Promise.all(
-        getRegister.rows.map(async (row) => {
-          const formattedRow = {}
-          for (let i = 0; i < getRegister.metaData.length; i++) {
-            const meta = getRegister.metaData[i]
-            let value = row[i]
-            if (value && value.constructor.name === 'Lob') {
-              value = (await value.getData(1, value.length)).toString()
-            }
-
-            if (value && value === 'true') {
-              value = true
-            }
-
-            if (value && value === 'false') {
-              value = false
-            }
-
-            let key = meta.name.toLowerCase()
-
-            if (camelCaseResponse) {
-              key = turnToCamelCase(key)
-            }
-
-            formattedRow[key] = value
-          }
-          return formattedRow
-        })
-      )
-    }
-
-    await oracleConector.commit()
-    return { success: true, data }
-  } catch (err) {
-    const error = `${fName} Error al ejecutar la consulta`
-    logger.error(`${fName} ${error}`)
-    console.error(err)
-    await oracleConector.rollback()
-
-    return { success: false, error, exception: err.message ?? err }
-  } finally {
-    try {
-      logger.info(`${fName} Cerrando la conexion con la base de datos...`)
-      await oracleConector.close()
-    } catch (err) {
-      const error = 'Error al cerrar la conexion con la base de datos'
-      logger.error(`${fName} ${error}`)
-      console.error(err)
-    }
-  }
-}
 
 /**
  * tableMetaData - Función para obtener la metadata de una tabla en la base de datos Oracle
  * @param {tableName} - Nombre de la tabla a consultar -> Obligatorio
  * @param {schemaName} - Nombre del esquema de la tabla -> Opcional
  */
-export const tableMetaData = async ({ tableName, schemaName } = {}, { logger = Logger } = {}) => {
+export const tableMetaData = async (header = {}, { tableName, schemaName } = {}, { logger = Logger } = {}) => {
   const fName = '[tableMetaData]'
 
   if (isEmpty(tableName)) {
@@ -335,36 +216,25 @@ export const tableMetaData = async ({ tableName, schemaName } = {}, { logger = L
                   where atc.table_name = '${tableName.toUpperCase()}'
                   ${!isEmpty(schemaName) ? `AND atc.owner = '${schemaName.toUpperCase()}'` : ''}`
 
-  const connection = (await getConnection()) ?? {}
-  if (!connection?.success) {
-    logger.error(`${fName} ${connection?.error}`)
-    return connection
-  }
-
-  const { connection: oracleConector } = connection
+  
 
   logger.info(`${fName} Consultando meta data de la tabla: ${tableName}`)
   try {
     logger.info(`${fName} Ejecutando la consulta: ${statement}`)
-    const request = await oracleConector.execute(statement)
+    const request = await executeOrclString(header, statement, {}, {}, { logger })
+    if (!request?.success) {
+      const error = `${fName} Error en la consulta de meta data de la tabla ${tableName}: ${request?.error ?? 'Error desconocido'}`
+      logger.error(`${fName} ${error}`)
+      return { success: false, error }
+    }
 
-    const data = await stringifyWithCircularDetection(request)
-    return { success: true, data }
+    return { success: true, data: request.data }
   } catch (err) {
     const error = `${fName} Error consultando meta data de la tabla ${tableName}`
     logger.error(`${fName} ${error}`)
     console.error(err)
     return { success: false, error, exception: err.message ?? err }
-  } finally {
-    try {
-      logger.info(`${fName} Cerrando la conexion con la base de datos...`)
-      await oracleConector.close()
-    } catch (err) {
-      const error = 'Error al cerrar la conexion con la base de datos'
-      logger.error(`${fName} ${error}`)
-      console.error(err)
-    }
-  }
+  } 
 }
 
 export const executeProcedure = async (
@@ -457,6 +327,47 @@ export const executeProcedure = async (
   }
 }
 
+export const executeOrclString = async (header = {}, sql, bind = {}, options = {}, { logger = Logger } = {}) => {
+    OracleDB.outFormat = OracleDB.OUT_FORMAT_OBJECT
+    OracleDB.autoCommit = true
+    let connection
+
+    const functionName = `[executeOrclString]`
+    try {
+      const exteriorConn = functions.extractDbConn(header)
+      if (!isEmpty(exteriorConn)){
+        connection = await OracleDB.getConnection(exteriorConn)
+        logger.info(`${functionName} - Connection success by 'Header`)
+      }
+      else{
+        if (!isEmpty(header.dbpool)) {
+          connection = await OracleDB.getConnection({ poolAlias: header.dbpool })
+          logger.info(`${functionName} - Connection success by 'Pool`)
+        }
+        else {
+          logger.error(`${functionName} - No DB connection`)
+          return { success: false, error: 'No DB connection' }
+        }          
+      }
+      logger.info(`${functionName} SQL= ${sql}`)
+      const res = await connection.execute(sql, bind, options)
+      return {
+        success: true,
+        data: functions.arrayKeysToLowerCase(res.rows ?? []),
+        rowsAffected: res.rowsAffected ?? 0,
+        outBinds: res.outBinds ?? {},
+      }
+    } catch (error) {
+      const catchError = `${functionName} - ${error.message}`
+      logger.error(catchError)
+      return { success: false, error: error.message }
+    } finally {
+      if (connection) {
+        await connection.close()
+        logger.info(`${functionName} - Close connection`)
+      }
+    }
+  }
 
 /*
  * Funcion para obtener las estadisticas del pool de conexiones a la base de datos Oracle
@@ -486,4 +397,3 @@ export const getPoolStats = ({ logger = Logger } = {}) => {
 
   return { success: true, data }
 }
-
