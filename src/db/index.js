@@ -59,8 +59,9 @@ export const initOraclePool = async ({ logger = Logger } = {}) => {
             connectString,
             poolAlias: alias,
             poolMin: parseInt(process.env.ORACLE_POOL_MIN ?? 5, 10),
-            poolMax: parseInt(process.env.ORACLE_POOL_MAX ?? 50, 10),
-            poolIncrement: parseInt(process.env.ORACLE_POOL_INCREMENT ?? 5, 10),
+            poolMax: parseInt(process.env.ORACLE_POOL_MAX ?? 5, 10),
+            poolIncrement: parseInt(process.env.ORACLE_POOL_INCREMENT ?? 1, 10),
+            enableStatistics: true
           })
 
           logger.info(`${fName} Cantidad de conexiones en el pool: ${connectionPools[alias].connectionsOpen}`)

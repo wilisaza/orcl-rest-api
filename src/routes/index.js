@@ -10,4 +10,6 @@ router.get('/max/:object/:field', orclCtrl.getMaxObject)
 
 router.get('/:object', orclCtrl.getAllObjects)
 
+router.post('/custom/:object', orclCtrl.postCustomObjects)
+
 export default router

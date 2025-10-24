@@ -214,4 +214,85 @@ export const orclCtrl = {
       return res.status(500).json({ success: false, error: error.message })
     }
   },
+
+  postCustomObjects: async (req, res) => {
+    const functionName = `${libName} [postCustomObjects]`
+    const requiredFields = ['object']
+    let err = {}
+    if (!valKeys(req.params, requiredFields, err)) {
+      const error = `${functionName} - Error al validar params: ${JSON.stringify(err)}`
+      logger.error(error)
+      return res.status(400).json({ success: false, error })
+    }
+
+    if (!req.body.fields || typeof req.body.fields !== 'object' || Array.isArray(req.body.fields)) {
+      const error = `${functionName} - Error al validar body: Se requiere un objeto 'fields'`
+      logger.error(error)
+      return res.status(400).json({ success: false, error })
+    }
+    try {
+      const table = req.params.object
+      const fields = Object.keys(req.body.fields)
+
+      if (fields.length === 0) {
+        const error = `${functionName} - El array 'fields' no puede estar vacío`
+        logger.error(error)
+        return res.status(400).json({ success: false, error })
+      }
+      // Validar que la tabla exista consultando los metadatos
+      const meta = await tableMetaData(req.headers, { tableName: table })
+      if (!meta.success || isEmpty(meta.data)) {
+        const error = `${functionName} - Tabla o vista no válida o no tiene metadatos: ${table}`
+        logger.error(error)
+        return res.status(400).json({ success: false, error })
+      }
+      const validColumns = meta.data.map((c) => c.column_name.toLowerCase())
+
+      // Validar los campos solicitados
+      const invalidFields = fields.filter(f => !validColumns.includes(f.trim().toLowerCase()))
+      if (invalidFields.length > 0) {
+        const error = `${functionName} - Campos no válidos para seleccionar: ${invalidFields.join(', ')}`
+        logger.error(error)
+        return res.status(400).json({ success: false, error })
+      }
+
+      const binds = {}
+      let whereClauses = []
+
+      // Construcción segura de la cláusula WHERE
+      for (const key in req.query) {
+        if (
+          Object.prototype.hasOwnProperty.call(req.query, key) &&
+          !resWords.includes(key.toLowerCase())
+        ) {
+          // Validar que la columna exista en la tabla
+          if (validColumns.includes(key.toLowerCase())) {
+            whereClauses.push(`${key.toUpperCase()} = :${key}`)
+            binds[key] = req.query[key]
+          } else {
+            logger.warn(`${functionName} - Se ignoró el parámetro de consulta no válido: ${key}`)
+          }
+        }
+      }
+
+      const validFields = fields.filter(f => validColumns.includes(f.trim().toLowerCase()))
+      let sql = `SELECT ${validFields.join(', ')} FROM ${table}`
+      if (whereClauses.length > 0) {
+        sql += ` WHERE ${whereClauses.join(' AND ')}`
+      }
+
+      const outData = await executeOrclString(req.headers, sql, binds, {})
+      if (outData.success === false) {
+        const error = `${functionName} - Error en la consulta: ${JSON.stringify(outData.error)}`
+        logger.error(error)
+        return res.status(400).json({ success: false, error })
+      }
+      logger.info(`${functionName} - Consulta exitosa`)
+      return res.status(200).json(outData)
+    } catch (error) {
+      const catchError = `${functionName} - ${error.message}`
+      logger.error(catchError)
+      return res.status(500).json({ success: false, error: error.message })
+    }
+  },
 }
